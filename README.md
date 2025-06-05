@@ -15,7 +15,7 @@ This script simplifies the process of converting a Machine/VM linux into a Proxm
 1. Clone this repository on the Proxmox host machine and give execution permissions to the scripts:
 
     ```bash
-    git clone https://github.com/mathewalves/machine-to-proxmox-lxc-ct-converter.git
+    git clone https://github.com/my5t3ry/machine-to-proxmox-lxc-ct-converter.git
     cd machine-to-proxmox-lxc-ct-converter
     chmod +x convert.sh bashconvert
     ```
