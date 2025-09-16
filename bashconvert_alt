@@ -1,0 +1,176 @@
+#!/bin/bash
+
+# Check if the 'pct' command is available on the host machine (Proxmox)
+if ! command -v pct &> /dev/null
+then
+    echo "pct could not be found. This script must be run on the host machine Proxmox"
+    exit 1
+fi
+
+# Function to display script usage
+usage()
+{
+    cat <<EOF
+$1 -h|--help
+ -n|--name [LXC container name]
+ -t|--target [target machine SSH URI]
+ -P|--port [target SSH port]
+ -i|--id [Proxmox container ID]
+ -s|--root-size [rootfs size in GB]
+ -a|--ip [target container IP]
+ -b|--bridge [bridge interface]
+ -g|--gateway [gateway IP]
+ -m|--memory [memory in MB]
+ -d|--disk-storage [target Proxmox storage pool]
+ -p|--password [root password for container (min. 5 chars)]
+EOF
+    return 0
+}
+
+# Parse command-line options
+options=$(getopt -o n:t:P:i:s:a:b:g:m:d:p: -l help,name:,target:,port:,id:,root-size:,ip:,bridge:,gateway:,memory:,disk-storage:,password: -- "$@")
+if [ $? -ne 0 ]; then
+    usage "$(basename "$0")"
+    exit 1
+fi
+eval set -- "$options"
+
+# Initialize variables
+name=""
+target=""
+port="22"
+id=""
+rootsize=""
+ip=""
+bridge=""
+gateway=""
+memory=""
+storage=""
+password=""
+
+# Process command-line options
+while true
+do
+    case "$1" in
+        -h|--help)          usage "$0" && exit 0;;
+        -n|--name)          name=$2; shift 2;;
+        -t|--target)        target=$2; shift 2;;
+        -P|--port)          port=$2; shift 2;;
+        -i|--id)            id=$2; shift 2;;
+        -s|--root-size)     rootsize=$2; shift 2;;
+        -a|--ip)            ip=$2; shift 2;;
+        -b|--bridge)        bridge=$2; shift 2;;
+        -g|--gateway)       gateway=$2; shift 2;;
+        -m|--memory)        memory=$2; shift 2;;
+        -p|--password)      password=$2; shift 2;;
+        -d|--disk-storage)  storage=$2; shift 2;;
+        --)                 shift; break ;;
+        *)                  break ;;
+    esac
+done
+
+# Validate required parameters
+if [ -z "$name" ] || [ -z "$target" ] || [ -z "$id" ] || [ -z "$rootsize" ] || \
+   [ -z "$ip" ] || [ -z "$bridge" ] || [ -z "$gateway" ] || [ -z "$memory" ] || \
+   [ -z "$storage" ] || [ -z "$password" ]; then
+    echo "Error: Missing required parameters!"
+    usage "$0"
+    exit 1
+fi
+
+# Function to collect file system data with ALT Linux compatibility
+collectFS() {
+    # Create compatibility files for ALT Linux
+    if grep -q "ALT" /etc/os-release 2>/dev/null || [ -f /etc/altlinux-release ]; then
+        echo "Detected ALT Linux, creating compatibility files..." >&2
+        echo "11.0" > /etc/debian_version
+        
+        # Fix network configuration for Proxmox
+        mkdir -p /etc/network
+        cat > /etc/network/interfaces << 'EOF'
+auto lo
+iface lo inet loopback
+
+auto eth0
+iface eth0 inet dhcp
+EOF
+        
+        # Ensure resolv.conf exists
+        echo "nameserver 8.8.8.8" > /etc/resolv.conf
+        echo "nameserver 1.1.1.1" >> /etc/resolv.conf
+    fi
+    
+    # Create the archive
+    tar -czf - -C / \
+        --exclude="sys" \
+        --exclude="dev" \
+        --exclude="run" \
+        --exclude="proc" \
+        --exclude="tmp/*" \
+        --exclude="var/tmp/*" \
+        --exclude="var/cache/*" \
+        --exclude="*.log" \
+        --exclude="*.log.*" \
+        --exclude="*.gz" \
+        --exclude="*.sql" \
+        --exclude="swap.img" \
+        --exclude="lost+found" \
+        --exclude=".bash_history" \
+        .
+}
+
+echo "Starting conversion process for $name..."
+echo "Connecting to $target:$port..."
+
+# SSH into the target machine, execute the file system collection function
+echo "Creating filesystem archive from source machine..."
+ssh -p "$port" "root@$target" "$(typeset -f collectFS); collectFS" > "/tmp/$name.tar.gz"
+
+# Check if archive was created successfully
+if [ $? -ne 0 ] || [ ! -f "/tmp/$name.tar.gz" ]; then
+    echo "Error: Failed to create archive from source machine!"
+    exit 1
+fi
+
+# Get archive size for information
+archive_size=$(du -h "/tmp/$name.tar.gz" | cut -f1)
+echo "Archive created successfully: /tmp/$name.tar.gz ($archive_size)"
+
+# Create Proxmox container with forced OS type for ALT Linux compatibility
+echo "Creating Proxmox container ID $id..."
+pct create "$id" "/tmp/$name.tar.gz" \
+  --description "LXC converted from ALT Linux" \
+  --hostname "$name" \
+  --features nesting=1 \
+  --memory "$memory" \
+  --nameserver 8.8.8.8 \
+  --net0 name=eth0,ip="$ip"/24,gw="$gateway",bridge="$bridge" \
+  --rootfs "$rootsize" \
+  --storage "$storage" \
+  --password "$password" \
+  --ostype debian
+
+# Check if container was created successfully
+if [ $? -eq 0 ]; then
+    echo "Container $id created successfully!"
+    echo "Starting container..."
+    pct start "$id"
+    
+    # Show container status
+    echo "Container status:"
+    pct status "$id"
+else
+    echo "Error: Failed to create container!"
+    # Clean up temporary file
+    rm -f "/tmp/$name.tar.gz"
+    exit 1
+fi
+
+# Remove the temporary file
+echo "Cleaning up temporary files..."
+rm -f "/tmp/$name.tar.gz"
+
+echo "Conversion completed successfully!"
+echo "Container ID: $id"
+echo "IP Address: $ip"
+echo "You can connect to the container using: pct enter $id"

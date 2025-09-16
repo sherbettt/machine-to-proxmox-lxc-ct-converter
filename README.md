@@ -54,6 +54,12 @@ If desired, use ./bashconvert to perform the conversion process using Bash.
 
  Customize as needed based on your specific requirements.
 
+## Конвертация ALT Linux машин
+Создай предварительно:
+1) **`/etc/debian_version`** с содержимым **`11.0`**
+2) /etc/os-release и altlinux-release оставь как есть
+3) используй скрипт bashconvert_alt
+
 
 
 ## Troubleshooting
