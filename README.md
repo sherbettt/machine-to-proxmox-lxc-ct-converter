@@ -61,6 +61,10 @@ If desired, use ./bashconvert to perform the conversion process using Bash.
 3) используй скрипт bashconvert_alt
 
 
+## Пример для ALT:
+./bashconvert_alt --name alt11-template --target 192.168.87.62 --port 22     --id 196 --root-size 20 --ip 192.168.87.131 --bridge vmbr0     --gateway 192.168.87.2 --memory 4096 --disk-storage ssd_1tb     --password runtelorg
+
+
 
 ## Troubleshooting
 
