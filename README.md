@@ -1,8 +1,5 @@
 # GNU/Linux Machine to Proxmox LXC Container Converter
 
-[![GitHub contributors](https://img.shields.io/github/contributors/my5t3ry/machine-to-proxmox-lxc-ct-converter.svg)](https://github.com/my5t3ry/machine-to-proxmox-lxc-ct-converter/contributors)
-[![GitHub stars](https://img.shields.io/github/stars/my5t3ry/machine-to-proxmox-lxc-ct-converter.svg)](https://github.com/my5t3ry/machine-to-proxmox-lxc-ct-converter/stargazers)
-
 This script simplifies the process of converting a Machine/VM linux into a Proxmox LXC container. Follow the prompts to provide essential details, and the script will handle the conversion seamlessly.
 
 ## Prerequisites
@@ -19,6 +16,7 @@ This script simplifies the process of converting a Machine/VM linux into a Proxm
     cd machine-to-proxmox-lxc-ct-converter
     chmod +x convert.sh bashconvert
     ```
+    Размещаем по пути /usr/local/bin/ConvertVMtoCT/machine-to-proxmox-lxc-ct-converter
 
 2. Run the script as a root:
 
