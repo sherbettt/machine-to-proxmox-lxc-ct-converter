@@ -81,12 +81,35 @@ fi
 # Function to collect file system data with ALT Linux compatibility
 collectFS() {
     # Create compatibility files for ALT Linux
-    if grep -q "ALT" /etc/os-release 2>/dev/null || [ -f /etc/altlinux-release ]; then
+    if grep -qi "altlinux" /etc/os-release 2>/dev/null || [ -f /etc/altlinux-release ]; then
         echo "Detected ALT Linux, creating compatibility files..." >&2
-        echo "11.0" > /etc/debian_version
         
-        # Fix network configuration for Proxmox
+        # Backup original release files
+        cp /etc/os-release /etc/os-release.backup.convert 2>/dev/null || true
+        [ -f /etc/altlinux-release ] && cp /etc/altlinux-release /etc/altlinux-release.backup.convert 2>/dev/null || true
+        
+        # Create Debian-compatible release files for better LXC compatibility
+        echo "Debian GNU/Linux 11 (bullseye)" > /etc/debian_version
+        
+        cat > /etc/os-release << 'EOF'
+NAME="Debian GNU/Linux"
+PRETTY_NAME="Debian GNU/Linux 11 (bullseye)"
+VERSION_ID="11"
+VERSION="11 (bullseye)"
+VERSION_CODENAME=bullseye
+ID=debian
+HOME_URL="https://www.debian.org/"
+SUPPORT_URL="https://www.debian.org/support"
+BUG_REPORT_URL="https://bugs.debian.org/"
+EOF
+        
+        # Ensure critical directories and files exist for LXC
         mkdir -p /etc/network
+        mkdir -p /run/sshd
+        mkdir -p /var/lock
+        touch /var/lock/lock
+        
+        # Create basic network config
         cat > /etc/network/interfaces << 'EOF'
 auto lo
 iface lo inet loopback
@@ -98,9 +121,17 @@ EOF
         # Ensure resolv.conf exists
         echo "nameserver 8.8.8.8" > /etc/resolv.conf
         echo "nameserver 1.1.1.1" >> /etc/resolv.conf
+        
+        # Clean up temporary files to reduce archive size
+        rm -rf /tmp/* /var/tmp/* /var/cache/apt/archives/* /var/log/*.log.* 2>/dev/null || true
+        
+        # Stop services that might cause issues during archiving
+        systemctl stop postfix 2>/dev/null || true
+        systemctl stop rsyslog 2>/dev/null || true
+        systemctl stop cron 2>/dev/null || true
     fi
     
-    # Create the archive
+    # Create the archive with comprehensive exclusions
     tar -czf - -C / \
         --exclude="sys" \
         --exclude="dev" \
@@ -109,14 +140,35 @@ EOF
         --exclude="tmp/*" \
         --exclude="var/tmp/*" \
         --exclude="var/cache/*" \
-        --exclude="*.log" \
-        --exclude="*.log.*" \
-        --exclude="*.gz" \
+        --exclude="var/log/*.log" \
+        --exclude="var/log/*.log.*" \
+        --exclude="var/log/*.gz" \
+        --exclude="var/log/apt/*.gz" \
         --exclude="*.sql" \
+        --exclude="swapfile" \
         --exclude="swap.img" \
         --exclude="lost+found" \
         --exclude=".bash_history" \
+        --exclude="root/.bash_history" \
+        --exclude="home/*/.bash_history" \
+        --exclude="*backup.convert" \
+        --exclude="var/spool/postfix/private/*" \
+        --exclude="var/lib/apt/lists/*" \
+        --exclude="var/lib/dpkg/*-old" \
         .
+    
+    # Restore original files immediately after archive creation
+    if [ -f /etc/os-release.backup.convert ]; then
+        mv /etc/os-release.backup.convert /etc/os-release
+    fi
+    if [ -f /etc/altlinux-release.backup.convert ]; then
+        mv /etc/altlinux-release.backup.convert /etc/altlinux-release
+    fi
+    
+    # Restart stopped services
+    systemctl start cron 2>/dev/null || true
+    systemctl start rsyslog 2>/dev/null || true
+    systemctl start postfix 2>/dev/null || true
 }
 
 echo "Starting conversion process for $name..."
@@ -136,7 +188,7 @@ fi
 archive_size=$(du -h "/tmp/$name.tar.gz" | cut -f1)
 echo "Archive created successfully: /tmp/$name.tar.gz ($archive_size)"
 
-# Create Proxmox container with forced OS type for ALT Linux compatibility
+# Create Proxmox container with Debian OS type for ALT Linux compatibility
 echo "Creating Proxmox container ID $id..."
 pct create "$id" "/tmp/$name.tar.gz" \
   --description "LXC converted from ALT Linux" \
@@ -148,22 +200,79 @@ pct create "$id" "/tmp/$name.tar.gz" \
   --rootfs "$rootsize" \
   --storage "$storage" \
   --password "$password" \
-  --ostype debian
+  --ostype debian \
+  --unprivileged 0
 
 # Check if container was created successfully
 if [ $? -eq 0 ]; then
     echo "Container $id created successfully!"
+    
+    # Apply post-creation fixes for ALT Linux
+    echo "Applying ALT Linux specific fixes..."
+    pct exec "$id" -- bash -c "
+        # Restore original ALT Linux release files
+        if [ -f /etc/os-release.backup.convert ]; then
+            mv /etc/os-release.backup.convert /etc/os-release
+        fi
+        if [ -f /etc/altlinux-release.backup.convert ]; then
+            mv /etc/altlinux-release.backup.convert /etc/altlinux-release
+        fi
+        
+        # Fix potential service issues
+        systemctl disable postfix 2>/dev/null || true
+        systemctl mask postfix 2>/dev/null || true
+        
+        # Clean up temporary compatibility files
+        rm -f /etc/debian_version
+        rm -f /etc/network/interfaces
+    "
+    
     echo "Starting container..."
     pct start "$id"
     
     # Show container status
     echo "Container status:"
     pct status "$id"
+    
+    # Wait a moment for network to initialize
+    sleep 3
+    echo "Testing network connectivity..."
+    pct exec "$id" -- ping -c 2 8.8.8.8 2>/dev/null || echo "Network may need additional configuration"
+    
 else
-    echo "Error: Failed to create container!"
-    # Clean up temporary file
-    rm -f "/tmp/$name.tar.gz"
-    exit 1
+    echo "Error: Failed to create container with primary method!"
+    echo "Trying alternative method with template extraction..."
+    
+    # Alternative method: create debian container and extract archive
+    pct create $id local:vztmpl/debian-11-standard_11.0-1_amd64.tar.gz \
+      --ostype debian \
+      --rootfs $rootsize \
+      --storage $storage \
+      --password "$password" \
+      --net0 name=eth0,ip=$ip/24,gw=$gateway,bridge=$bridge \
+      --memory $memory \
+      --unprivileged 0 \
+      --start 0
+    
+    if [ $? -eq 0 ]; then
+        echo "Extracting ALT Linux filesystem into container..."
+        pct stop $id 2>/dev/null
+        rm -rf /var/lib/lxc/$id/rootfs/*
+        tar xzf "/tmp/$name.tar.gz" -C /var/lib/lxc/$id/rootfs/ --strip-components=1
+        
+        # Preserve critical container files
+        cp /var/lib/lxc/$id/rootfs/etc/os-release /var/lib/lxc/$id/rootfs/etc/os-release.alt
+        cp /var/lib/lxc/$id/rootfs/etc/altlinux-release /var/lib/lxc/$id/rootfs/etc/altlinux-release.alt 2>/dev/null || true
+        
+        echo "Starting container with alternative method..."
+        pct start $id
+        echo "Container $id created using alternative method!"
+    else
+        echo "Error: Both methods failed!"
+        # Clean up temporary file
+        rm -f "/tmp/$name.tar.gz"
+        exit 1
+    fi
 fi
 
 # Remove the temporary file
@@ -174,3 +283,8 @@ echo "Conversion completed successfully!"
 echo "Container ID: $id"
 echo "IP Address: $ip"
 echo "You can connect to the container using: pct enter $id"
+echo ""
+echo "Note: After conversion, you may want to:"
+echo "1. Update /etc/apt/sources.list to Debian repositories"
+echo "2. Run 'apt update && apt upgrade'"
+echo "3. Check and configure services as needed"
