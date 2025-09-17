@@ -88,15 +88,15 @@ collectFS() {
         cp /etc/os-release /etc/os-release.backup.convert 2>/dev/null || true
         [ -f /etc/altlinux-release ] && cp /etc/altlinux-release /etc/altlinux-release.backup.convert 2>/dev/null || true
         
-        # Create Debian-compatible release files for better LXC compatibility
-        echo "Debian GNU/Linux 11 (bullseye)" > /etc/debian_version
+        # Create proper Debian version file (simple version number)
+        echo "11.0" > /etc/debian_version
         
+        # Create minimal os-release for compatibility
         cat > /etc/os-release << 'EOF'
 NAME="Debian GNU/Linux"
 PRETTY_NAME="Debian GNU/Linux 11 (bullseye)"
 VERSION_ID="11"
 VERSION="11 (bullseye)"
-VERSION_CODENAME=bullseye
 ID=debian
 HOME_URL="https://www.debian.org/"
 SUPPORT_URL="https://www.debian.org/support"
@@ -165,6 +165,9 @@ EOF
         mv /etc/altlinux-release.backup.convert /etc/altlinux-release
     fi
     
+    # Clean up temporary files
+    rm -f /etc/debian_version /etc/network/interfaces /etc/resolv.conf
+    
     # Restart stopped services
     systemctl start cron 2>/dev/null || true
     systemctl start rsyslog 2>/dev/null || true
@@ -188,7 +191,7 @@ fi
 archive_size=$(du -h "/tmp/$name.tar.gz" | cut -f1)
 echo "Archive created successfully: /tmp/$name.tar.gz ($archive_size)"
 
-# Create Proxmox container with Debian OS type for ALT Linux compatibility
+# Create Proxmox container with unmanaged OS type
 echo "Creating Proxmox container ID $id..."
 pct create "$id" "/tmp/$name.tar.gz" \
   --description "LXC converted from ALT Linux" \
@@ -200,7 +203,7 @@ pct create "$id" "/tmp/$name.tar.gz" \
   --rootfs "$rootsize" \
   --storage "$storage" \
   --password "$password" \
-  --ostype debian \
+  --ostype unmanaged \
   --unprivileged 0
 
 # Check if container was created successfully
@@ -210,21 +213,17 @@ if [ $? -eq 0 ]; then
     # Apply post-creation fixes for ALT Linux
     echo "Applying ALT Linux specific fixes..."
     pct exec "$id" -- bash -c "
-        # Restore original ALT Linux release files
-        if [ -f /etc/os-release.backup.convert ]; then
-            mv /etc/os-release.backup.convert /etc/os-release
-        fi
-        if [ -f /etc/altlinux-release.backup.convert ]; then
-            mv /etc/altlinux-release.backup.convert /etc/altlinux-release
-        fi
-        
         # Fix potential service issues
         systemctl disable postfix 2>/dev/null || true
         systemctl mask postfix 2>/dev/null || true
         
-        # Clean up temporary compatibility files
-        rm -f /etc/debian_version
+        # Ensure network configuration is clean
         rm -f /etc/network/interfaces
+        rm -f /etc/resolv.conf
+        
+        # Create fresh resolv.conf
+        echo 'nameserver 8.8.8.8' > /etc/resolv.conf
+        echo 'nameserver 1.1.1.1' >> /etc/resolv.conf
     "
     
     echo "Starting container..."
@@ -237,42 +236,76 @@ if [ $? -eq 0 ]; then
     # Wait a moment for network to initialize
     sleep 3
     echo "Testing network connectivity..."
-    pct exec "$id" -- ping -c 2 8.8.8.8 2>/dev/null || echo "Network may need additional configuration"
+    pct exec "$id" -- ping -c 2 8.8.8.8 2>/dev/null && echo "Network is working!" || echo "Network may need additional configuration"
     
 else
     echo "Error: Failed to create container with primary method!"
-    echo "Trying alternative method with template extraction..."
+    echo "Trying alternative method with manual extraction..."
     
-    # Alternative method: create debian container and extract archive
-    pct create $id local:vztmpl/debian-11-standard_11.0-1_amd64.tar.gz \
-      --ostype debian \
-      --rootfs $rootsize \
-      --storage $storage \
-      --password "$password" \
-      --net0 name=eth0,ip=$ip/24,gw=$gateway,bridge=$bridge \
-      --memory $memory \
-      --unprivileged 0 \
-      --start 0
-    
-    if [ $? -eq 0 ]; then
-        echo "Extracting ALT Linux filesystem into container..."
-        pct stop $id 2>/dev/null
-        rm -rf /var/lib/lxc/$id/rootfs/*
-        tar xzf "/tmp/$name.tar.gz" -C /var/lib/lxc/$id/rootfs/ --strip-components=1
-        
-        # Preserve critical container files
-        cp /var/lib/lxc/$id/rootfs/etc/os-release /var/lib/lxc/$id/rootfs/etc/os-release.alt
-        cp /var/lib/lxc/$id/rootfs/etc/altlinux-release /var/lib/lxc/$id/rootfs/etc/altlinux-release.alt 2>/dev/null || true
-        
-        echo "Starting container with alternative method..."
-        pct start $id
-        echo "Container $id created using alternative method!"
-    else
-        echo "Error: Both methods failed!"
-        # Clean up temporary file
-        rm -f "/tmp/$name.tar.gz"
-        exit 1
+    # First, check if container directory exists and clean up
+    if [ -d "/var/lib/lxc/$id" ]; then
+        echo "Cleaning up previous container directory..."
+        pct destroy $id 2>/dev/null || rm -rf "/var/lib/lxc/$id" 2>/dev/null
     fi
+    
+    # Create container directory structure manually
+    echo "Creating container directory structure..."
+    mkdir -p "/var/lib/lxc/$id"
+    mkdir -p "/stg/1tb/images/$id"
+    
+    # Create raw disk image
+    echo "Creating raw disk image..."
+    qemu-img create -f raw "/stg/1tb/images/$id/vm-$id-disk-0.raw" "${rootsize}G"
+    
+    # Format the disk
+    echo "Formatting disk..."
+    mkfs.ext4 "/stg/1tb/images/$id/vm-$id-disk-0.raw"
+    
+    # Mount and extract archive
+    echo "Mounting and extracting filesystem..."
+    mount_dir=$(mktemp -d)
+    mount "/stg/1tb/images/$id/vm-$id-disk-0.raw" "$mount_dir"
+    
+    cd "$mount_dir"
+    tar xzf "/tmp/$name.tar.gz"
+    
+    # Create minimal config file
+    cat > "/var/lib/lxc/$id/config" << EOF
+lxc.include = /usr/share/lxc/config/debian.common.conf
+lxc.arch = x86_64
+lxc.uts.name = $name
+lxc.rootfs.path = /stg/1tb/images/$id/vm-$id-disk-0.raw
+lxc.mount.entry = /stg/1tb/images/$id/vm-$id-disk-0.raw rootfs ext4 defaults 0 0
+lxc.net.0.type = veth
+lxc.net.0.link = $bridge
+lxc.net.0.flags = up
+lxc.net.0.ipv4.address = $ip/24
+lxc.net.0.ipv4.gateway = $gateway
+lxc.net.0.name = eth0
+EOF
+    
+    # Unmount
+    cd /
+    umount "$mount_dir"
+    rmdir "$mount_dir"
+    
+    # Register container in Proxmox
+    echo "Registering container in Proxmox..."
+    cat > "/etc/pve/lxc/$id.conf" << EOF
+arch: amd64
+cores: 1
+hostname: $name
+memory: $memory
+net0: name=eth0,bridge=$bridge,ip=$ip/24,gw=$gateway
+ostype: unmanaged
+rootfs: ssd_1tb:vm-$id-disk-0.raw,size=${rootsize}G
+swap: 512
+unprivileged: 0
+EOF
+    
+    echo "Container $id created using alternative method!"
+    echo "Starting container..."
+    pct start $id
 fi
 
 # Remove the temporary file
