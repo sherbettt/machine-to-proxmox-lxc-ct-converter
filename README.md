@@ -1,7 +1,5 @@
 Основная статья на GitHUB: [machine-to-proxmox-lxc-ct-converter](https://github.com/my5t3ry/machine-to-proxmox-lxc-ct-converter)
 
-См. внутренний проект с изменениями: https://gitlab.runtel.org/kkorablin/machine-to-proxmox-lxc-ct-converter
-
 Выполнять конвертацию на “железных” серверах ProxMox.
 <br/>
 
@@ -130,7 +128,46 @@ CentOS Linux release 8.0.2 (Core)
 CentOS Linux release 8.0.2 (Core)
 ```
 
-Аналогичные действия для  Astra Linux. Требуется изменить **ID="redos"** на **ID="debian"**.
+Аналогичные действия для  Astra Linux.
+```bash
+┌─ root
+├─ alt11-server ~ ▶ ccat /etc/os-release; echo; ccat /etc/altlinux-release
+NAME="ALT Server"
+VERSION="11.0"
+ID=altlinux
+VERSION_ID=11.0
+PRETTY_NAME="ALT Server 11.0 (Mendelevium)"
+ANSI_COLOR="1;33"
+CPE_NAME="cpe:/o:alt:server:11.0"
+BUILD_ID="ALT Server 11.0"
+ALT_BRANCH_ID="p11"
+HOME_URL="https://basealt.ru/"
+BUG_REPORT_URL="https://bugs.altlinux.org/"
+DOCUMENTATION_URL="https://docs.altlinux.org/"
+SUPPORT_URL="https://support.basealt.ru/"
+VARIANT_ID=edition_server
+VARIANT="ALT Server"
+LOGO=alt-server-logo
+
+ALT Server 11.0 (Mendelevium)
+
+```
+```bash
+┌─ root
+├─ alt11-server /etc ▶ ccat /etc/os-release; echo; ccat /etc/altlinux-release
+PRETTY_NAME="Debian GNU/Linux 11 (bullseye)"
+NAME="Debian GNU/Linux"
+VERSION_ID="11"
+VERSION="11 (bullseye)"
+VERSION_CODENAME=bullseye
+ID=debian
+HOME_URL="https://www.debian.org/"
+SUPPORT_URL="https://www.debian.org/support"
+BUG_REPORT_URL="https://bugs.debian.org/"
+
+ALT Server 11.0 (Mendelevium)
+```
+
 
 После успешных действий, создать шаблоны:
 ```
