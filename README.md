@@ -1,5 +1,6 @@
 Основная статья на GitHUB: [machine-to-proxmox-lxc-ct-converter](https://github.com/my5t3ry/machine-to-proxmox-lxc-ct-converter)
 
+
 Выполнять конвертацию на “железных” серверах ProxMox.
 <br/>
 
@@ -176,7 +177,35 @@ vzdump 196 --storage home --mode stop --compress zstd --remove 0
  #или/и
 vzdump 196 --storage ssd_1tb --mode stop --compress zstd --remove 0
  #или/и
-vzdump 196 --compress gzip --dumpdir /home/dump/
+vzdump 196 --compress gzip --dumpdir /home/template/cache
+```
+
+Зайти в контейнер и устанвоить\проверить сеть:
+```bash
+pct enter 888
+
+# Полная настройка сети
+ip addr flush dev eth0
+ip addr add 192.168.87.131/24 dev eth0
+ip link set eth0 up
+ip route add default via 192.168.87.1 dev eth0
+
+# Проверяем
+ip addr show eth0
+ip route show
+```
+Создаем правильный network configuration (/etc/network/interfaces):
+```bash
+## /etc/network/interfaces
+auto lo
+iface lo inet loopback
+
+auto eth0
+iface eth0 inet static
+    address 192.168.87.131
+    netmask 255.255.255.0
+    gateway 192.168.87.1
+    dns-nameservers 8.8.8.8 1.1.1.1
 ```
 
 
