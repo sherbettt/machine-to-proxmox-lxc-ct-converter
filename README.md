@@ -1,69 +1,159 @@
-# GNU/Linux Machine to Proxmox LXC Container Converter
+Основная статья на GitHUB: [machine-to-proxmox-lxc-ct-converter](https://github.com/my5t3ry/machine-to-proxmox-lxc-ct-converter)
 
-This script simplifies the process of converting a Machine/VM linux into a Proxmox LXC container. Follow the prompts to provide essential details, and the script will handle the conversion seamlessly.
+См. внутренний проект с изменениями: https://gitlab.runtel.org/kkorablin/machine-to-proxmox-lxc-ct-converter
 
-## Prerequisites
+Выполнять конвертацию на “железных” серверах ProxMox.
+<br/>
 
-- This script must be run on the Proxmox host machine.
-- Ensure that the 'pct' command is available on your Proxmox host machine.
+# Последовательность:
 
-## Installation
+### Посмотреть ostype вашего ProxMox сервера:
+```
+man pct | grep -A 10 "ostype"
+```
 
-1. Clone this repository on the Proxmox host machine and give execution permissions to the scripts:
+### Склонировать репу на Proxmox host сервер и выдать права на исполнение скрипту:
 
-    ```bash
-    git clone https://github.com/my5t3ry/machine-to-proxmox-lxc-ct-converter.git
-    cd machine-to-proxmox-lxc-ct-converter
-    chmod +x convert.sh bashconvert
-    ```
-    Размещаем по пути /usr/local/bin/ConvertVMtoCT/machine-to-proxmox-lxc-ct-converter
+Переходим в директорию: **`/usr/local/bin/ConvertVMtoCT/machine-to-proxmox-lxc-ct-converter`**
+```plaintext
+git clone https://github.com/my5t3ry/machine-to-proxmox-lxc-ct-converter.git
+cd machine-to-proxmox-lxc-ct-converter
+chmod +x convert.sh bashconvert
+```
 
-2. Run the script as a root:
+> ### Проверить VID виртуалок и контейнеров 
+> Используй скрипты по пути **~/scripts/**
+{.is-warning}
 
-    ```bash
-    ./convert.sh
-    ```
 
-## Usage
+### Запустить скрипт от root:
+```plaintext
+./convert.sh
+```
+```plaintext
+./bashconvert
+```
 
-1. Run the script and follow the interactive prompts to provide necessary details for the conversion.
+Пример 1:
+```plaintext
+./bashconvert \
+--name astra-template \
+--target 192.168.87.103 \
+--port 22 \
+--id 196 \
+--root-size 20 \
+--ip 192.168.87.130 \
+--bridge vmbr0 \
+--gateway 192.168.87.2 \
+--memory 4096 \
+--disk-storage ssd_1tb \
+--password runtelorg
+```
 
-2. The script will initiate the conversion process. Note that you need the SSH key of the machine and the SSH port.
-
-3. Once the conversion is complete, the Proxmox LXC container will be created.
-
-## Options & Alternatives
-
-If desired, use ./bashconvert to perform the conversion process using Bash.
+Пример 2:
 ```bash
-./bashconvert -h |--help
- -n|--name [lxc container name]
- -t|--target [target machine ssh uri]
- -P|--port [target port ssh]
- -i|--id [proxmox container id]
- -s|--root-size [rootfs size in GB]
- -a|--ip [target container ip]
- -b|--bridge [bridge interface]
- -g|--gateway [gateway ip]
- -m|--memory [memory in mb]
- -d|--disk-storage [target proxmox storage pool]
- -p|--password [root password for container (min. 5 chars)]
- ```
+./bashconvert_redos \
+--name redos8-template \
+--target 192.168.87.44 --port 22 --id 888 \
+--root-size 20 --ip 192.168.87.131 \
+--bridge vmbr0 --gateway 192.168.87.2 \
+--memory 4096 --disk-storage ssd_1tb \
+--password runtelorg
+```
 
- Customize as needed based on your specific requirements.
-
-## Конвертация ALT Linux машин
-Создай предварительно:
-1) **`/etc/debian_version`** с содержимым **`11.0`**
-2) /etc/os-release и altlinux-release оставь как есть
-3) используй скрипт bashconvert_alt
+Првоерка контейнера:
+```bash
+pct status 196
+pct config 196
+pct exec 196 ip addr
+pct enter 196
+pct reboot 196
+```
+<br/>
 
 
-## Пример для ALT:
-./bashconvert_alt --name alt11-template --target 192.168.87.62 --port 22     --id 196 --root-size 20 --ip 192.168.87.131 --bridge vmbr0     --gateway 192.168.87.2 --memory 4096 --disk-storage ssd_1tb     --password runtelorg
+# Convert Astra1.7 , RedOS7/8, ALT11
+
+### Делаем backup'ы release файлов:
+
+Бекапы:
+```bash
+root@redos8-template ~
+12:39:55 # ll /etc/*.backup
+-rw-r--r-- 1 root root 298 сен 17 12:11 /etc/os-release.backup
+-rw-r--r-- 1 root root  31 сен 17 12:11 /etc/redhat-release.backup
+-rw-r--r-- 1 root root  31 сен 17 12:11 /etc/redos-release.backup
+-rw-r--r-- 1 root root  31 сен 17 12:11 /etc/system-release.backup
+```
+
+Source file:
+```bash
+root@redos8-template ~
+12:41:26 # ccat /etc/os-release.backup; ccat /etc/redhat-release.backup; ccat /etc/redos-release.backup; ccat /etc/system-release.backup
+NAME="RED OS"
+VERSION="8.0.2"
+PLATFORM_ID="platform:red80"
+ID="redos"
+ID_LIKE="rhel centos fedora"
+VERSION_ID="8.0.2"
+PRETTY_NAME="RED OS 8.0.2"
+ANSI_COLOR="0;31"
+CPE_NAME="cpe:/o:redos:redos:8"
+HOME_URL="https://redos.red-soft.ru"
+BUG_REPORT_URL="https://support.red-soft.ru"
+EDITION="Standard"
+
+RED OS release (8.0.2) MINIMAL
+RED OS release (8.0.2) MINIMAL
+RED OS release (8.0.2) MINIMAL
+```
+
+Dest file:
+```bash
+root@redos8-template ~
+12:43:25 # ccat /etc/os-release; ccat /etc/redhat-release; ccat /etc/redos-release; ccat /etc/system-release
+NAME="CentOS Linux"
+VERSION="8"
+ID="centos"
+ID_LIKE="rhel fedora"
+VERSION_ID="8"
+PLATFORM_ID="platform:el8"
+PRETTY_NAME="CentOS Linux 8"
+ANSI_COLOR="0;31"
+CPE_NAME="cpe:/o:centos:centos:8"
+HOME_URL="https://www.centos.org"
+BUG_REPORT_URL="https://bugs.centos.org"
+CENTOS_MANTISBT_PROJECT="CentOS-8"
+CENTOS_MANTISBT_PROJECT_VERSION="8"
+CentOS Linux release 8.0.2 (Core)
+CentOS Linux release 8.0.2 (Core)
+CentOS Linux release 8.0.2 (Core)
+```
+
+Аналогичные действия для  Astra Linux. Требуется изменить **ID="redos"** на **ID="debian"**.
+
+После успешных действий, создать шаблоны:
+```
+pvesh get /nodes/pmx5/storage
+vzdump 196 --storage home --mode stop --compress zstd --remove 0
+ #или/и
+vzdump 196 --storage ssd_1tb --mode stop --compress zstd --remove 0
+ #или/и
+vzdump 196 --compress gzip --dumpdir /home/dump/
+```
 
 
+Полученные архивы поместить по пути: `/home/template/cache`
 
-## Troubleshooting
+Однако, стоит иметь в виду, что ISO образы должны храниться в `/var/lib/vz/template/iso`,   
+хотя можно и по пути: `/stg/ssd/template/iso`:
 
-- If 'pct' or 'sshpass' is not available, the script will attempt to install 'sshpass' in the background.
+```plaintext
+
+# Добавьте существующую директорию как хранилище
+# В веб-интерфейсе: Datacenter → Storage → Add → Directory
+# Укажите:
+# - ID: например, `ssd-iso`
+# - Directory: `/stg/ssd/template/iso`
+# - Content: ISO images
+```
