@@ -223,3 +223,9 @@ iface eth0 inet static
 # - Directory: `/stg/ssd/template/iso`
 # - Content: ISO images
 ```
+
+см. [Установка и настройка ALT Linux 11 Starterkit в WSL 2](https://github.com/sherbettt/PS-cheats/blob/main/6.%20ALT%20Linux%2011%20в%20WSL2.md)
+
+Шаблоны:
+- https://ftp.altlinux.org/pub/distributions/ALTLinux/p11/images/cloud/x86_64/alt-p11-rootfs-systemd-x86_64.tar.xz
+- https://ftp.altlinux.org/pub/distributions/ALTLinux/images/Sisyphus/cloud/x86_64/alt-sisyphus-rootfs-systemd-x86_64.tar.xz
